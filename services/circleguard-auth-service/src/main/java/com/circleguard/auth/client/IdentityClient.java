@@ -1,5 +1,6 @@
 package com.circleguard.auth.client;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 import java.util.*;
@@ -10,6 +11,8 @@ public class IdentityClient {
     private final RestTemplate restTemplate;
     private static final String IDENTITY_URL = "http://localhost:8083/api/v1/identities/map";
 
+    // Constructor que usa Spring (el otro existe solo para inyectar un RestTemplate en pruebas)
+    @Autowired
     public IdentityClient() {
         this(new RestTemplate());
     }

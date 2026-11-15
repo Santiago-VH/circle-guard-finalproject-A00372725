@@ -186,8 +186,10 @@ pipeline {
             when { expression { return !TARGETS.isEmpty() } }
             steps {
                 withSonarQubeEnv('SonarQube-Server') {
-                    // Las pruebas ya corrieron: -x evita re-ejecutarlas; Sonar toma los XML de JaCoCo
-                    gradlew 'sonar -x test -x integrationTest'
+                    // Sonar analiza el monorepo completo y necesita los .class de los 8 servicios
+                    // (en un PR selectivo solo se compilaron los modificados): se compilan todos.
+                    // Las pruebas ya corrieron: -x evita re-ejecutarlas; Sonar toma los XML de JaCoCo.
+                    gradlew 'classes testClasses sonar -x test -x integrationTest'
                 }
             }
         }

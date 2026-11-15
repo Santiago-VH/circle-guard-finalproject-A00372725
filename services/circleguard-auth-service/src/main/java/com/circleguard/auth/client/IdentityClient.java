@@ -12,7 +12,10 @@ public class IdentityClient {
 
     public UUID getAnonymousId(String realIdentity) {
         Map<String, String> request = Map.of("realIdentity", realIdentity);
-        Map response = restTemplate.postForObject(IDENTITY_URL, request, Map.class);
+        Map<?, ?> response = restTemplate.postForObject(IDENTITY_URL, request, Map.class);
+        if (response == null || response.get("anonymousId") == null) {
+            throw new IllegalStateException("Identity service returned no anonymousId");
+        }
         return UUID.fromString(response.get("anonymousId").toString());
     }
 }

@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
+# -----------------------------------------------------------------------------
 # bootstrap-ci.sh — Levanta y configura la plataforma de CI de CircleGuard
 #   Jenkins (JCasC) + SonarQube (+ PostgreSQL) con Docker Compose.
 #
 # Idempotente: se puede ejecutar cuantas veces se quiera; solo crea lo que falta.
-#   - Crea infra/.env (contraseñas aleatorias, pide el PAT de GitHub)
-#   - Levanta SonarQube y lo configura por API, contraseña admin, proyectos,
+#   - Crea infra/.env (contraseñas aleatorias, pide el PAT de GitHub una vez)
+#   - Levanta SonarQube y lo configura por API: contraseña admin, proyectos,
 #     Quality Gate "CircleGuard-Gate", webhook a Jenkins y token de análisis
 #   - Escribe los secretos de Jenkins en infra/.secrets (uno por archivo)
 #   - Construye y levanta Jenkins ya configurado (credenciales + servidor Sonar)
@@ -12,7 +13,7 @@
 # Uso (Git Bash en Windows, o Linux/macOS), desde la raíz del repo:
 #   bash infra/bootstrap/bootstrap-ci.sh
 # Requisitos: docker (con compose v2) y curl.
-
+# -----------------------------------------------------------------------------
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -134,21 +135,37 @@ else
   api POST /api/qualitygates/create --data-urlencode "name=$GATE_NAME" >/dev/null
   ok "Quality Gate $GATE_NAME creado"
 fi
-# Cada condición se agrega solo si falta (idempotente aunque una ejecución anterior se haya cortado)
+# Reconciliar condiciones con la definición de arriba (idempotente):
+#  - SonarQube 10.x crea los gates nuevos con condiciones "Clean as You Code" por defecto
+#    (p. ej. cobertura 80 % y new_violations > 0): se ajustan o se eliminan.
+DESIRED="new_coverage:LT:60 new_duplicated_lines_density:GT:3 new_reliability_rating:GT:1 new_security_rating:GT:1 new_security_hotspots_reviewed:LT:100 security_rating:GT:1 reliability_rating:GT:3"
 gate_json="$(api GET "/api/qualitygates/show?name=$GATE_NAME")"
-add_cond() {
-  if [[ "$gate_json" == *"\"metric\":\"$1\""* ]]; then return 0; fi
-  api POST /api/qualitygates/create_condition --data-urlencode "gateName=$GATE_NAME" \
-    --data-urlencode "metric=$1" --data-urlencode "op=$2" --data-urlencode "error=$3" >/dev/null
-  ok "Condición agregada: $1 $2 $3"
-}
-add_cond new_coverage                    LT 60
-add_cond new_duplicated_lines_density    GT 3
-add_cond new_reliability_rating          GT 1
-add_cond new_security_rating             GT 1
-add_cond new_security_hotspots_reviewed  LT 100
-add_cond security_rating                 GT 1
-add_cond reliability_rating              GT 3
+current="$(printf '%s' "$gate_json" | grep -o '{"id":"[^"]*","metric":"[^"]*","op":"[^"]*","error":"[^"]*"' \
+  | sed 's/{"id":"\([^"]*\)","metric":"\([^"]*\)","op":"\([^"]*\)","error":"\([^"]*\)"/\1:\2:\3:\4/' || true)"
+
+for want in $DESIRED; do
+  IFS=: read -r metric op error <<<"$want"
+  line="$(printf '%s\n' "$current" | grep ":$metric:" || true)"
+  if [[ -z "$line" ]]; then
+    api POST /api/qualitygates/create_condition --data-urlencode "gateName=$GATE_NAME" \
+      --data-urlencode "metric=$metric" --data-urlencode "op=$op" --data-urlencode "error=$error" >/dev/null
+    ok "Condición agregada: $metric $op $error"
+  else
+    IFS=: read -r cid _ cop cerror <<<"$line"
+    if [[ "$cop" != "$op" || "$cerror" != "$error" ]]; then
+      api POST /api/qualitygates/update_condition --data-urlencode "id=$cid" \
+        --data-urlencode "metric=$metric" --data-urlencode "op=$op" --data-urlencode "error=$error" >/dev/null
+      ok "Condición ajustada: $metric $cop $cerror -> $op $error"
+    fi
+  fi
+done
+while IFS=: read -r cid metric _ _; do
+  [[ -z "$cid" ]] && continue
+  if [[ " $DESIRED " != *" $metric:"* ]]; then
+    api POST /api/qualitygates/delete_condition --data-urlencode "id=$cid" >/dev/null
+    ok "Condición eliminada (no forma parte del gate): $metric"
+  fi
+done <<<"$current"
 ok "Condiciones del Quality Gate verificadas"
 for entry in "${PROJECTS[@]}"; do
   key="${entry%%:*}"

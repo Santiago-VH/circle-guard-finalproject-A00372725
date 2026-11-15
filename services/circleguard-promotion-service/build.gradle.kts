@@ -6,6 +6,11 @@ plugins {
     kotlin("plugin.jpa")
 }
 
+// El BOM de Spring Boot 3.2.4 fija Testcontainers en 1.19.7 (también para las dependencias
+// transitivas, como testcontainers-core). Esa versión usa la API 1.32 de Docker, que
+// Docker Engine 29 rechaza. Se sobrescribe la propiedad del BOM.
+extra["testcontainers.version"] = "1.21.4"
+
 dependencies {
     implementation(platform("org.springframework.boot:spring-boot-dependencies:3.2.4"))
     testImplementation(platform("org.springframework.boot:spring-boot-dependencies:3.2.4"))

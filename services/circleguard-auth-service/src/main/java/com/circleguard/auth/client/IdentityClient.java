@@ -7,8 +7,17 @@ import java.util.*;
 @Component
 public class IdentityClient {
     // In a real microservice, this would use Feign or WebClient
-    private final RestTemplate restTemplate = new RestTemplate();
+    private final RestTemplate restTemplate;
     private static final String IDENTITY_URL = "http://localhost:8083/api/v1/identities/map";
+
+    public IdentityClient() {
+        this(new RestTemplate());
+    }
+
+    // Permite inyectar un RestTemplate controlado en las pruebas
+    IdentityClient(RestTemplate restTemplate) {
+        this.restTemplate = restTemplate;
+    }
 
     public UUID getAnonymousId(String realIdentity) {
         Map<String, String> request = Map.of("realIdentity", realIdentity);

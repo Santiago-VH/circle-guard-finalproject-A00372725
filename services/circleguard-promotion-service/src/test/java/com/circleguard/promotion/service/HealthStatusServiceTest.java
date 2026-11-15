@@ -1,7 +1,9 @@
 package com.circleguard.promotion.service;
 
 import com.circleguard.promotion.repository.graph.UserNodeRepository;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.cache.concurrent.ConcurrentMapCache;
 import org.mockito.ArgumentMatchers;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -73,6 +75,14 @@ class HealthStatusServiceTest {
 
     @MockBean
     private com.circleguard.promotion.repository.graph.CircleNodeRepository circleNodeRepository;
+
+    // El CacheManager es un mock: se le da un caché real en memoria para que
+    // @CacheEvict("userStatus") funcione cuando el servicio se invoca por su proxy.
+    @BeforeEach
+    void setUpCache() {
+        when(cacheManager.getCache(anyString()))
+                .thenAnswer(invocation -> new ConcurrentMapCache(invocation.getArgument(0)));
+    }
 
     @Test
     void shouldUpdateStatusSuccessfully() {

@@ -84,6 +84,23 @@ CircleGuard follows a **Microservice Architecture** built on a **Hybrid Data Mod
 
 ---
 
+## CI/CD (Sprint 1: Dev → Build → Test)
+
+Every pull request and every push to `main` runs through a Jenkins multibranch pipeline:
+build (Gradle) → unit tests + JaCoCo coverage → integration tests (Testcontainers) →
+SonarQube analysis → **blocking Quality Gate**.
+
+```bash
+bash infra/bootstrap/bootstrap-ci.sh   # Jenkins :8080 + SonarQube :9000, configured from scratch
+```
+
+| Document | Content |
+|----------|---------|
+| [docs/ci/README.md](docs/ci/README.md) | Setup, pipeline stages, Quality Gate, troubleshooting |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | GitHub Flow, Conventional Commits, branch protection |
+
+---
+
 ## Local Development
 
 ### 1. Infrastructure

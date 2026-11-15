@@ -43,7 +43,7 @@ List<String> servicesFromDiff(String diff, List<String> all) {
         }
         // docs/, infra/, mobile/, etc. no afectan a los microservicios
     }
-    return changed as List
+    return changed as List  
 }
 
 // ":services:a:test :services:b:test ..."

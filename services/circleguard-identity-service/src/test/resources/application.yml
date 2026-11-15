@@ -18,3 +18,7 @@ vault:
   secret: "746573742d7365637265742d33322d63686172732d6c6f6e672d313233343536" # hex for "test-secret-..."
   salt: "deadbeef"      # hex for encryption
   hash-salt: "12345678" # hex for hashing
+
+# Clave HMAC solo para pruebas (>= 256 bits, exigido por jjwt)
+jwt:
+  secret: "test-only-jwt-secret-key-with-at-least-32-bytes"

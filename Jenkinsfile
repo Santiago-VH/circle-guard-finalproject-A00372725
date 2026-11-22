@@ -304,7 +304,10 @@ pipeline {
     }
 
     post {
+        success  { echo "✅ ${env.JOB_NAME} #${env.BUILD_NUMBER}: build, pruebas, Quality Gate, E2E y deploy OK" }
+        unstable { echo "⚠️ ${env.JOB_NAME} #${env.BUILD_NUMBER}: pruebas de integración con fallos (revisar reporte)" }
         failure {
+            echo "❌ ${env.JOB_NAME} #${env.BUILD_NUMBER}: falló. Revisa la etapa en rojo."
             script {
                 // Rollback básico: si el despliegue o el smoke test fallaron, vuelve a la última versión buena
                 if (env.BRANCH_NAME == 'main' && env.DEPLOY_STARTED == 'true' && env.PREV_WEB_VERSION) {
@@ -313,8 +316,5 @@ pipeline {
                 }
             }
         }
-        success  { echo "✅ ${env.JOB_NAME} #${env.BUILD_NUMBER}: build, pruebas, Quality Gate, E2E y deploy OK" }
-        unstable { echo "⚠️ ${env.JOB_NAME} #${env.BUILD_NUMBER}: pruebas de integración con fallos (revisar reporte)" }
-        failure  { echo "❌ ${env.JOB_NAME} #${env.BUILD_NUMBER}: falló. Revisa la etapa en rojo." }
     }
 }

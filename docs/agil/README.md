@@ -89,7 +89,7 @@ y cada PR la cierra con `Closes #N`.
 - Si el deploy o el smoke test fallan, el pipeline vuelve a la última versión buena (rollback).
 
 **HU-12 — Documentación.** *Como docente quiero poder reproducir y evaluar el proyecto.*
-- Guía de puesta en marcha, diagramas del pipeline, sprints con review y retrospectiva, registro de IAG e informe.
+- Guía de puesta en marcha, diagramas del pipeline, sprints con review y retrospectiva, e informe de cada sprint con su registro de IAG.
 
 **HU-13 — Bug del cuestionario.** *Como estudiante quiero que mis respuestas lleguen al form-service.*
 - Dado un cuestionario respondido, cuando lo envío, entonces el `POST /api/v1/surveys` contiene mis respuestas (antes llegaba `{}`).

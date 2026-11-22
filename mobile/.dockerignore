@@ -1,0 +1,8 @@
+node_modules
+dist
+web-build
+.expo
+test-output.txt
+*.log
+Dockerfile
+.dockerignore

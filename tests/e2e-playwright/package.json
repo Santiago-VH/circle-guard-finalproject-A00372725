@@ -1,0 +1,13 @@
+{
+  "name": "circleguard-e2e",
+  "private": true,
+  "description": "Pruebas E2E del cliente web de CircleGuard con Playwright",
+  "scripts": {
+    "test": "playwright test",
+    "report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.1",
+    "@types/node": "^22.10.0"
+  }
+}

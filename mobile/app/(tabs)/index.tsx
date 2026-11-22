@@ -19,13 +19,13 @@ export default function HomeScreen() {
     <View style={styles.container}>
       <MeshBackground confirmedCount={0} unconfirmedCount={0} />
       
-      <View style={styles.header}>
+      <View style={styles.header} testID="access-pass-status">
         <Text style={styles.statusLabel}>STATUS</Text>
         <Text style={styles.statusValue}>ACTIVE</Text>
       </View>
 
       <View style={styles.qrContainer}>
-        <View style={styles.qrInner}>
+        <View style={styles.qrInner} testID={token ? 'access-pass-qr' : 'access-pass-pending'}>
           {token ? (
             <QRCode
               value={token}
@@ -37,7 +37,7 @@ export default function HomeScreen() {
             <QrCode size={200} color="#f4f4f5" strokeWidth={1.5} />
           )}
         </View>
-        <Text style={styles.expiresText}>
+        <Text style={styles.expiresText} testID="access-pass-expires">
           EXPIRES IN {Math.floor(timeLeft / 60)}:{String(timeLeft % 60).padStart(2, '0')}
         </Text>
       </View>

@@ -84,11 +84,13 @@ CircleGuard follows a **Microservice Architecture** built on a **Hybrid Data Mod
 
 ---
 
-## CI/CD (Sprint 1: Dev → Build → Test)
+## CI/CD (Dev → Build → Test → Deploy)
 
 Every pull request and every push to `main` runs through a Jenkins multibranch pipeline:
 build (Gradle) → unit tests + JaCoCo coverage → integration tests (Testcontainers) →
-SonarQube analysis → **blocking Quality Gate**.
+SonarQube analysis → **blocking Quality Gate** → web client image → **E2E tests (Playwright)**.
+On `main` the web client is then deployed to a local dev environment (http://localhost:8090),
+checked with a smoke test and rolled back automatically if it fails.
 
 ```bash
 bash infra/bootstrap/bootstrap-ci.sh   # Jenkins :8080 + SonarQube :9000, configured from scratch
@@ -96,6 +98,14 @@ bash infra/bootstrap/bootstrap-ci.sh   # Jenkins :8080 + SonarQube :9000, config
 
 | Document | Content |
 |----------|---------|
+| [docs/ci/README.md](docs/ci/README.md) | Setup, pipeline stages, Quality Gate, deploy, troubleshooting |
+| [tests/e2e-playwright/README.md](tests/e2e-playwright/README.md) | E2E test flows and how to run them locally |
+| [docs/arquitectura/pipeline.md](docs/arquitectura/pipeline.md) | Pipeline and CI/CD infrastructure diagrams |
+| [docs/agil/](docs/agil/README.md) | Agile framework, backlog, sprint plans, reviews and retros |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | GitHub Flow, Conventional Commits, branch protection |
+| [IAG_REGISTRO.md](IAG_REGISTRO.md) | Generative AI usage log |
+
+----------|---------|
 | [docs/ci/README.md](docs/ci/README.md) | Setup, pipeline stages, Quality Gate, troubleshooting |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | GitHub Flow, Conventional Commits, branch protection |
 

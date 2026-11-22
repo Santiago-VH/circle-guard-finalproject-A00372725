@@ -4,7 +4,7 @@
 # Uso: deploy/scripts/deploy-web.sh <version>
 #   deploy/scripts/deploy-web.sh 1.0.42      # despliega circleguard/web:1.0.42
 # También sirve para rollback manual: deploy-web.sh <version-anterior>
-# La imagen debe existir en el Docker local (la construye el pipeline).
+# La imagen debe existir en el Docker local.
 # -----------------------------------------------------------------------------
 set -euo pipefail
 

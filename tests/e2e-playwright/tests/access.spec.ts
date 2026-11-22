@@ -5,7 +5,7 @@ import { API, SESSION, mockBackend, startLoggedIn } from '../support/api';
  * Flujo 3: validación de acceso.
  * El pase de acceso al campus es un QR firmado y de vida corta que emite el auth-service
  * (GET /api/v1/auth/qr/generate) y que el gateway-service valida en la entrada.
- * Aquí se valida el lado del cliente: solo una sesión autenticada obtiene y muestra el pase,
+ * Aquí se valida el lado del cliente, solo una sesión autenticada obtiene y muestra el pase,
  * con el tiempo de expiración que define el servidor, y al cerrar sesión se pierde el acceso.
  */
 test.describe('Validación de acceso', () => {

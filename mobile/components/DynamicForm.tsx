@@ -12,14 +12,20 @@ interface Question {
 interface DynamicFormProps {
   questions: Question[];
   onSubmit: (responses: Record<string, any>) => void;
+  /** Notifica cada cambio para que la pantalla que envía el formulario tenga las respuestas. */
+  onChange?: (responses: Record<string, any>) => void;
   submitLabel?: string;
 }
 
-export const DynamicForm: React.FC<DynamicFormProps> = ({ questions, onSubmit }) => {
+export const DynamicForm: React.FC<DynamicFormProps> = ({ questions, onSubmit, onChange }) => {
   const [responses, setResponses] = useState<Record<string, any>>({});
 
   const handleUpdate = (id: string, value: any) => {
-    setResponses(prev => ({ ...prev, [id]: value }));
+    setResponses(prev => {
+      const next = { ...prev, [id]: value };
+      onChange?.(next);
+      return next;
+    });
   };
 
   return (

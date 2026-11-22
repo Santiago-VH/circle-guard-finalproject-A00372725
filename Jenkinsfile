@@ -1,12 +1,15 @@
 // =============================================================================
-// CircleGuard — Pipeline CI (Sprint 1: Dev → Build → Test)
+// CircleGuard — Pipeline CI/CD
+//   Sprint 1 (Dev → Build → Test):
+//     Checkout → Detectar cambios → Build (Gradle) → Pruebas unitarias + JaCoCo
+//     → Pruebas de integración (Testcontainers) → Análisis SonarQube → Quality Gate
+//   Sprint 2 (Test → Deploy):
+//     → Imagen del cliente web → Pruebas E2E (Playwright) → Deploy dev (solo main)
+//     → Smoke test, con rollback automático a la versión anterior si falla
 //
 // Job Multibranch "circleguard" (rama main + Pull Requests).
-//   Checkout → Detectar cambios → Build (Gradle) → Pruebas unitarias + JaCoCo
-//   → Pruebas de integración (Testcontainers) → Análisis SonarQube → Quality Gate
-//
 // Ejecución por servicio: en PRs solo se construyen/prueban los microservicios
-// modificados.
+// modificados (y el cliente web solo si cambió); en main se ejecuta todo.
 // =============================================================================
 
 // Variables globales del script (sin 'def' para que sean visibles en métodos y en 'when')
@@ -23,6 +26,12 @@ ALL_SERVICES = [
 
 // Proyectos Gradle (":services:<nombre>") que este build debe procesar
 TARGETS = []
+
+// ¿Hay que construir y probar (E2E) el cliente web en este build?
+WEB_CHANGED = true
+
+// Imagen de Playwright: misma versión que @playwright/test en tests/e2e-playwright
+PLAYWRIGHT_IMAGE = 'mcr.microsoft.com/playwright:v1.65.1-noble'
 
 // Archivos que, si cambian, obligan a reconstruir todo el monorepo
 @NonCPS
@@ -44,6 +53,14 @@ List<String> servicesFromDiff(String diff, List<String> all) {
         // docs/, infra/, mobile/, etc. no afectan a los microservicios
     }
     return changed as List  
+}
+
+// ¿El diff toca el cliente web, sus pruebas E2E o el despliegue?
+@NonCPS
+boolean webFromDiff(String diff) {
+    return diff.readLines().any { String f ->
+        f ==~ /^(mobile|tests\/e2e-playwright|deploy)\/.*/ || isGlobalChange(f)
+    }
 }
 
 // ":services:a:test :services:b:test ..."
@@ -92,6 +109,10 @@ pipeline {
                     env.GIT_PREVIOUS_SUCCESSFUL_COMMIT = scmVars.GIT_PREVIOUS_SUCCESSFUL_COMMIT ?: ''
                     sh 'chmod +x gradlew'
                     env.GIT_SHORT = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
+                    // Etiqueta de la imagen web: semver en main (lo que se despliega), efímera en PRs
+                    env.WEB_TAG = env.BRANCH_NAME == 'main' ? env.APP_VERSION : "pr-${env.CHANGE_ID ?: 'rama'}-${env.BUILD_NUMBER}"
+                    // Nombre único para la red y el contenedor de las pruebas E2E de este build
+                    env.E2E_NET = 'e2e-' + sh(script: 'printf %s "$BUILD_TAG" | tr -c "a-zA-Z0-9" "-" | tr "A-Z" "a-z"', returnStdout: true).trim()
                     currentBuild.displayName = "#${env.BUILD_NUMBER} (${env.GIT_SHORT})"
                     if (env.CHANGE_ID) {
                         currentBuild.description = "PR-${env.CHANGE_ID}: ${env.CHANGE_TITLE ?: ''} → ${env.CHANGE_TARGET}"
@@ -121,9 +142,11 @@ pipeline {
                         def diff = sh(script: "git diff --name-only ${base} HEAD || true", returnStdout: true)
                         echo "Archivos modificados respecto a ${base}:\n${diff}"
                         selected = diff.trim() ? servicesFromDiff(diff, all) : all
+                        WEB_CHANGED = diff.trim() ? webFromDiff(diff) : true
                     }
                     TARGETS = selected.collect { ":services:${it}".toString() }
                     echo "Servicios a procesar (${TARGETS.size()}): ${selected.join(', ') ?: 'ninguno'}"
+                    echo "Cliente web (imagen + E2E): ${WEB_CHANGED ? 'sí' : 'sin cambios, se omite'}"
                 }
             }
         }
@@ -203,10 +226,94 @@ pipeline {
                 }
             }
         }
+
+        // ------------------------------------------------------- TEST (E2E)
+        stage('Imagen del cliente web') {
+            when { expression { return WEB_CHANGED } }
+            steps {
+                // expo export -p web + nginx no root; etiqueta con versión, nunca "latest"
+                sh "docker build --pull --build-arg APP_VERSION=${env.WEB_TAG} -t circleguard/web:${env.WEB_TAG} mobile"
+            }
+        }
+
+        stage('Pruebas E2E (Playwright)') {
+            when { expression { return WEB_CHANGED } }
+            steps {
+                // 1) Levanta la imagen recién construida en una red aislada de este build
+                // 2) Corre Playwright en su imagen oficial sobre el mismo workspace (--volumes-from)
+                sh """
+                    set -eu
+                    docker network create "\$E2E_NET"
+                    docker run -d --name "\$E2E_NET-web" --network "\$E2E_NET" "circleguard/web:\$WEB_TAG"
+                    for i in \$(seq 1 30); do
+                        state=\$(docker inspect -f '{{.State.Health.Status}}' "\$E2E_NET-web")
+                        [ "\$state" = "healthy" ] && break
+                        sleep 2
+                    done
+                    echo "Cliente web para E2E: \$state"
+                    docker run --rm --network "\$E2E_NET" --volumes-from "\$(hostname)" \\
+                        -w "\$WORKSPACE/tests/e2e-playwright" \\
+                        -e CI=1 -e E2E_BASE_URL="http://\$E2E_NET-web:8080" \\
+                        ${PLAYWRIGHT_IMAGE} \\
+                        /bin/bash -c "npm ci --no-audit --no-fund && npx playwright test"
+                """
+            }
+            post {
+                always {
+                    junit testResults: 'tests/e2e-playwright/results/junit.xml', allowEmptyResults: true
+                    archiveArtifacts artifacts: 'tests/e2e-playwright/playwright-report/**, tests/e2e-playwright/test-results/**',
+                                     allowEmptyArchive: true
+                    sh 'docker rm -f "$E2E_NET-web" > /dev/null 2>&1 || true; docker network rm "$E2E_NET" > /dev/null 2>&1 || true'
+                    script {
+                        // Las imágenes de PR no se despliegan: se borran para no llenar el disco
+                        if (env.BRANCH_NAME != 'main') {
+                            sh 'docker rmi "circleguard/web:$WEB_TAG" > /dev/null 2>&1 || true'
+                        }
+                    }
+                }
+            }
+        }
+
+        // ------------------------------------------------------------ DEPLOY
+        stage('Deploy (dev local)') {
+            when { branch 'main' }
+            steps {
+                script {
+                    env.PREV_WEB_VERSION = sh(script: 'cat "$JENKINS_HOME/deploy/web.version" 2>/dev/null || true',
+                                              returnStdout: true).trim()
+                    echo "Versión en dev antes del despliegue: ${env.PREV_WEB_VERSION ?: 'ninguna'}"
+                    env.DEPLOY_STARTED = 'true'
+                }
+                sh "bash deploy/scripts/deploy-web.sh ${env.WEB_TAG}"
+            }
+        }
+
+        stage('Smoke test') {
+            when { branch 'main' }
+            steps {
+                sh "bash deploy/scripts/smoke-test.sh http://host.docker.internal:8090 ${env.WEB_TAG}"
+            }
+            post {
+                success {
+                    // Esta versión queda como la última buena (destino de un rollback futuro)
+                    sh 'mkdir -p "$JENKINS_HOME/deploy" && echo "$WEB_TAG" > "$JENKINS_HOME/deploy/web.version"'
+                    echo "✅ Desplegado en dev: http://localhost:8090 (circleguard/web:${env.WEB_TAG})"
+                }
+            }
+        }
     }
 
     post {
-        success  { echo "✅ ${env.JOB_NAME} #${env.BUILD_NUMBER}: build, pruebas y Quality Gate OK" }
+        failure {
+            script {
+                // Rollback básico: si el despliegue o el smoke test fallaron, vuelve a la última versión buena
+                if (env.BRANCH_NAME == 'main' && env.DEPLOY_STARTED == 'true' && env.PREV_WEB_VERSION) {
+                    echo "↩️ Rollback a circleguard/web:${env.PREV_WEB_VERSION}"
+                    sh "bash deploy/scripts/deploy-web.sh ${env.PREV_WEB_VERSION}"
+                }
+            }
+        }
+        success  { echo "✅ ${env.JOB_NAME} #${env.BUILD_NUMBER}: build, pruebas, Quality Gate, E2E y deploy OK" }
         unstable { echo "⚠️ ${env.JOB_NAME} #${env.BUILD_NUMBER}: pruebas de integración con fallos (revisar reporte)" }
         failure  { echo "❌ ${env.JOB_NAME} #${env.BUILD_NUMBER}: falló. Revisa la etapa en rojo." }
     }

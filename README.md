@@ -103,7 +103,6 @@ bash infra/bootstrap/bootstrap-ci.sh   # Jenkins :8080 + SonarQube :9000, config
 | [docs/arquitectura/pipeline.md](docs/arquitectura/pipeline.md) | Pipeline and CI/CD infrastructure diagrams |
 | [docs/agil/](docs/agil/README.md) | Agile framework, backlog, sprint plans, reviews and retros |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | GitHub Flow, Conventional Commits, branch protection |
-| [IAG_REGISTRO.md](IAG_REGISTRO.md) | Generative AI usage log |
 
 ----------|---------|
 | [docs/ci/README.md](docs/ci/README.md) | Setup, pipeline stages, Quality Gate, troubleshooting |

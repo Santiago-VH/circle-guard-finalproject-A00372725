@@ -26,7 +26,7 @@ class IdentityClientTest {
     void setUp() {
         RestTemplate restTemplate = new RestTemplate();
         server = MockRestServiceServer.bindTo(restTemplate).build();
-        client = new IdentityClient(restTemplate);
+        client = new IdentityClient(restTemplate, "http://localhost:8083");
     }
 
     @Test

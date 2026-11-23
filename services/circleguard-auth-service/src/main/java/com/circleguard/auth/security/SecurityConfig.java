@@ -37,7 +37,8 @@ public class SecurityConfig {
     @Bean
     public org.springframework.web.cors.CorsConfigurationSource corsConfigurationSource() {
         org.springframework.web.cors.CorsConfiguration configuration = new org.springframework.web.cors.CorsConfiguration();
-        configuration.setAllowedOrigins(java.util.List.of("http://localhost:8081", "http://localhost:8080"));
+        // 8090: cliente web desplegado en el ambiente dev
+        configuration.setAllowedOrigins(java.util.List.of("http://localhost:8081", "http://localhost:8080", "http://localhost:8090"));
         configuration.setAllowedMethods(java.util.List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(java.util.List.of("*"));
         configuration.setAllowCredentials(true);
@@ -54,9 +55,10 @@ public class SecurityConfig {
     }
 
     @Bean
-    public LdapContextSource contextSource() {
+    public LdapContextSource contextSource(
+            @org.springframework.beans.factory.annotation.Value("${spring.ldap.urls:ldap://localhost:389}") String ldapUrl) {
         LdapContextSource contextSource = new LdapContextSource();
-        contextSource.setUrl("ldap://localhost:389");
+        contextSource.setUrl(ldapUrl);
         contextSource.setBase("dc=circleguard,dc=edu");
         contextSource.setUserDn("cn=admin,dc=circleguard,dc=edu");
         contextSource.setPassword("admin");

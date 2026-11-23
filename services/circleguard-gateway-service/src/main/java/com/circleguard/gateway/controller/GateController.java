@@ -8,6 +8,7 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1/gate")
+@CrossOrigin(origins = {"http://localhost:8081", "http://localhost:8090"})
 @RequiredArgsConstructor
 public class GateController {
     private final QrValidationService validationService;

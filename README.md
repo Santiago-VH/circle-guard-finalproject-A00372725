@@ -104,9 +104,22 @@ bash infra/bootstrap/bootstrap-ci.sh   # Jenkins :8080 + SonarQube :9000, config
 | [docs/agil/](docs/agil/README.md) | Agile framework, backlog, sprint plans, reviews and retros |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | GitHub Flow, Conventional Commits, branch protection |
 
-----------|---------|
-| [docs/ci/README.md](docs/ci/README.md) | Setup, pipeline stages, Quality Gate, troubleshooting |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | GitHub Flow, Conventional Commits, branch protection |
+### Backend deployment (manual, local dev)
+
+The five core microservices (auth, identity, promotion, form, gateway) plus PostgreSQL, Neo4j,
+Kafka/Zookeeper and Redis can be deployed as a separate compose project (`circleguard-backend`).
+Run from Git Bash:
+
+```bash
+./gradlew bootJar -x test                      # build the executable jars
+./deploy/scripts/deploy-services.sh dev        # build images and start everything (waits for healthy)
+./deploy/scripts/smoke-test-services.sh        # services respond + real login (auth -> identity -> JWT)
+./deploy/scripts/deploy-web.sh <web-version>   # optional: web client on http://localhost:8090
+docker compose -f deploy/compose/docker-compose.services.yml down   # stop (add -v to drop data)
+```
+
+Services are published on auth `8180`, identity `8083`, promotion `8088`, form `8086`, gateway `8087`.
+No LDAP server runs in dev: login falls back to the seeded local users (e.g. `staff_guard` / `password`).
 
 ---
 

@@ -1,0 +1,193 @@
+# Despliegue "dev" (local) del backend de CircleGuard: middleware + 5 microservicios core.
+#   SERVICES_VERSION=dev docker compose -f deploy/compose/docker-compose.services.yml up -d --build --wait
+# Proyecto separado del cliente web (circleguard-dev) para no afectar lo ya desplegado.
+# El middleware NO publica puertos en el host (evita choques con docker-compose.dev.yml);
+# los microservicios sí, porque el cliente web (http://localhost:8090) los llama por localhost:<puerto>.
+name: circleguard-backend
+
+x-service: &service
+  restart: on-failure
+  environment: &common-env
+    JAVA_TOOL_OPTIONS: "-Xmx256m -XX:+UseSerialGC"
+    # Sin servidor LDAP en dev: la cadena dual cae al usuario local (tabla local_users)
+    SPRING_LDAP_URLS: "ldap://127.0.0.1:389"
+  labels:
+    com.circleguard.environment: "dev"
+    com.circleguard.version: "${SERVICES_VERSION:-dev}"
+
+services:
+  # ---------------------------------------------------------------- middleware
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: circleguard
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d circleguard"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # Crea las bases de cada servicio. Reemplaza el bind mount de init-db.sql,
+  # que no funciona cuando Jenkins usa el Docker del host (DooD).
+  postgres-init:
+    image: postgres:16
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: password
+    entrypoint: ["bash", "-c"]
+    command:
+      - |
+        set -e
+        for db in circleguard_auth circleguard_identity circleguard_promotion circleguard_form; do
+          psql -h postgres -U admin -d circleguard -tAc "SELECT 1 FROM pg_database WHERE datname='$$db'" | grep -q 1 \
+            || psql -h postgres -U admin -d circleguard -c "CREATE DATABASE $$db"
+        done
+        echo "Bases listas"
+    restart: "no"
+
+  neo4j:
+    image: neo4j:5.26
+    environment:
+      NEO4J_AUTH: neo4j/password
+      NEO4J_server_memory_heap_max__size: 512m
+      NEO4J_server_memory_pagecache_size: 128m
+    volumes:
+      - neo4jdata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p password 'RETURN 1' > /dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 18
+      start_period: 20s
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.0
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+      KAFKA_HEAP_OPTS: "-Xmx256m"
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      # Dentro de la red de compose el broker se anuncia como kafka:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_HEAP_OPTS: "-Xmx512m"
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9092 > /dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 18
+      start_period: 15s
+
+  redis:
+    image: redis:7.2
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # ------------------------------------------------------------ microservicios
+  identity:
+    <<: *service
+    image: circleguard/identity:${SERVICES_VERSION:-dev}
+    build:
+      context: ../../services/circleguard-identity-service
+      dockerfile: ../../deploy/services/Dockerfile
+      args: { SERVICE_PORT: "8083" }
+    container_name: circleguard-identity
+    depends_on:
+      postgres-init: { condition: service_completed_successfully }
+    environment:
+      <<: *common-env
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/circleguard_identity
+    ports: ["8083:8083"]
+
+  auth:
+    <<: *service
+    image: circleguard/auth:${SERVICES_VERSION:-dev}
+    build:
+      context: ../../services/circleguard-auth-service
+      dockerfile: ../../deploy/services/Dockerfile
+      args: { SERVICE_PORT: "8180" }
+    container_name: circleguard-auth
+    depends_on:
+      postgres-init: { condition: service_completed_successfully }
+      identity: { condition: service_healthy }
+    environment:
+      <<: *common-env
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/circleguard_auth
+      IDENTITY_BASE_URL: http://identity:8083
+    ports: ["8180:8180"]
+
+  promotion:
+    <<: *service
+    image: circleguard/promotion:${SERVICES_VERSION:-dev}
+    build:
+      context: ../../services/circleguard-promotion-service
+      dockerfile: ../../deploy/services/Dockerfile
+      args: { SERVICE_PORT: "8088" }
+    container_name: circleguard-promotion
+    depends_on:
+      postgres-init: { condition: service_completed_successfully }
+      neo4j: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    environment:
+      <<: *common-env
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/circleguard_promotion
+      SPRING_NEO4J_URI: bolt://neo4j:7687
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      SPRING_DATA_REDIS_HOST: redis
+    ports: ["8088:8088"]
+
+  form:
+    <<: *service
+    image: circleguard/form:${SERVICES_VERSION:-dev}
+    build:
+      context: ../../services/circleguard-form-service
+      dockerfile: ../../deploy/services/Dockerfile
+      args: { SERVICE_PORT: "8086" }
+    container_name: circleguard-form
+    depends_on:
+      postgres-init: { condition: service_completed_successfully }
+      kafka: { condition: service_healthy }
+    environment:
+      <<: *common-env
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/circleguard_form
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    ports: ["8086:8086"]
+
+  gateway:
+    <<: *service
+    image: circleguard/gateway:${SERVICES_VERSION:-dev}
+    build:
+      context: ../../services/circleguard-gateway-service
+      dockerfile: ../../deploy/services/Dockerfile
+      args: { SERVICE_PORT: "8087" }
+    container_name: circleguard-gateway
+    depends_on:
+      redis: { condition: service_healthy }
+    environment:
+      <<: *common-env
+      SPRING_DATA_REDIS_HOST: redis
+    ports: ["8087:8087"]
+
+volumes:
+  pgdata:
+  neo4jdata:

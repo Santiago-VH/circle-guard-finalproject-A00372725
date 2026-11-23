@@ -1,6 +1,7 @@
 package com.circleguard.auth.client;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 import java.util.*;
@@ -9,22 +10,24 @@ import java.util.*;
 public class IdentityClient {
     // In a real microservice, this would use Feign or WebClient
     private final RestTemplate restTemplate;
-    private static final String IDENTITY_URL = "http://localhost:8083/api/v1/identities/map";
+    private final String identityUrl;
 
-    // Constructor que usa Spring (el otro existe solo para inyectar un RestTemplate en pruebas)
+    // Constructor que usa Spring. La URL del identity-service es configurable
+    // (identity.base-url) para que funcione también dentro de contenedores.
     @Autowired
-    public IdentityClient() {
-        this(new RestTemplate());
+    public IdentityClient(@Value("${identity.base-url:http://localhost:8083}") String identityBaseUrl) {
+        this(new RestTemplate(), identityBaseUrl);
     }
 
     // Permite inyectar un RestTemplate controlado en las pruebas
-    IdentityClient(RestTemplate restTemplate) {
+    IdentityClient(RestTemplate restTemplate, String identityBaseUrl) {
         this.restTemplate = restTemplate;
+        this.identityUrl = identityBaseUrl + "/api/v1/identities/map";
     }
 
     public UUID getAnonymousId(String realIdentity) {
         Map<String, String> request = Map.of("realIdentity", realIdentity);
-        Map<?, ?> response = restTemplate.postForObject(IDENTITY_URL, request, Map.class);
+        Map<?, ?> response = restTemplate.postForObject(identityUrl, request, Map.class);
         if (response == null || response.get("anonymousId") == null) {
             throw new IllegalStateException("Identity service returned no anonymousId");
         }
